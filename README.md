@@ -1,123 +1,83 @@
-# Turbot — Tour Selection Bot for MAX Messenger
+# TurBot MAX — тот же турбот, другой мессенджер
 
-A conversational bot for Russia's **МАКС (MAX)** messenger that helps travelers
-pick a tour through a guided, step-by-step form and automatically forwards each
-completed request as a lead into the **МоиДокументы-Туризм (MoiDokumenti-Tourism)**
-CRM.
+![Python](https://img.shields.io/badge/Python-asyncio-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-The bot walks a user through a short FSM-driven dialog — destination, dates,
-party size, budget, phone — validates every answer, confirms the request, and
-pushes a structured lead to the travel agency's CRM via its REST API. A small
-Flask server runs alongside the bot to expose health-check endpoints, so the
-service can be hosted on platforms like Render as a Web Service.
+> Telegram-версию вы уже видели (или вот-вот увидите).  
+> **MAX** — российский мессенджер. Клиенты там. Лиды должны быть там же.  
+> Этот репозиторий — порт сценария «подбор тура → CRM», без «давайте перепишем всё с нуля, потому что скучно».
 
-> 🇷🇺 Бот для мессенджера МАКС: пошаговый подбор тура и автоматическая отправка
-> заявок в CRM «МоиДокументы-Туризм». Документация ниже — на английском.
+Бот для **МАКС**: пошаговый FSM (направление, даты, люди, бюджет, телефон),  
+валидация, подтверждение, отправка lead в **МоиДокументы-Туризм (MDT)**.  
+Flask рядом — `/` и `/health`, чтобы хостинг не думал, что процесс умер от одиночества.
 
-## Features
+---
 
-- **Guided tour-request form** — finite-state-machine dialog collecting
-  destination, dates, number of travelers, budget, and contact phone.
-- **Input validation** — each field is validated before the conversation
-  advances (phone format, party size 1–50, positive budget, dates, destination).
-- **CRM lead delivery** — completed requests are sent to MoiDokumenti-Tourism
-  via the `api/add-lead` endpoint, including a formatted comment and structured
-  fields.
-- **Graceful degradation** — if CRM credentials are not configured, the bot
-  still works end-to-end and simply skips lead delivery (logged as a warning).
-- **Health-check endpoints** — Flask `/` and `/health` routes for uptime
-  monitoring and Web Service hosting.
-- **Stateless-friendly deployment** — single process, long-polling the MAX API
-  with the Flask server on a background thread.
+## Зачем это существует
 
-## Tech Stack
+| Telegram (`turbot-arhangelsk`) | MAX (этот репо) |
+|--------------------------------|-----------------|
+| Webhook Bot API | long-polling + maxapi |
+| Отдельный `shared/` с VK | Свой стек, та же **идея** lead-gen |
+| Админка в Telegram | Фокус на клиентском диалоге + CRM |
 
-- **Python** (asyncio)
-- **[maxapi](https://pypi.org/project/maxapi/)** — MAX messenger Bot API client,
-  Dispatcher, and FSM context
-- **Flask** — health-check HTTP endpoints
-- **requests** — CRM REST integration
-- Designed for deployment on **Render** (Web Service)
+Один бизнес-процесс — две (три) платформы. Не потому что «масштабируемся в мультивселенную»,  
+а потому что клиенты разбежались по мессенджерам, а менеджеру нужен **один** lead в CRM.
 
-## Setup
+---
 
-### 1. Install dependencies
+## Фичи
+
+- **FSM-диалог** — как анкета, только с эмодзи и без бумажки  
+- **Валидация** — телефон, люди, бюджет, даты (человеческий ввод = энтропия)  
+- **CRM** — `add-lead` в MDT; нет ключей — бот живёт, CRM просто «не сегодня» (warning в лог)  
+- **Health** — Flask `/` и `/health`  
+- **Деплой** — один процесс: polling MAX + HTTP в фоне  
+
+---
+
+## Стек
+
+- Python · **asyncio**
+- [maxapi](https://pypi.org/project/maxapi/) — Bot API, Dispatcher, FSM  
+- Flask — health  
+- requests — CRM  
+- Render / VPS — как повезёт с free-tier  
+
+---
+
+## Быстрый старт
 
 ```bash
+git clone https://github.com/r0meo-1/turbot-arhangelsk-max.git
+cd turbot-arhangelsk-max
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+cp .env.example .env   # если есть; иначе — переменные окружения
 ```
 
-### 2. Configure environment variables
-
-Copy `.env.example` and fill in your values:
+Обычно нужны токен MAX-бота и (опционально) `MDT_*`.  
+Без CRM бот всё равно пройдёт диалог — просто lead останется «в чате вселенной».
 
 ```bash
-cp .env.example .env
+python bot.py   # или как указано в Procfile / README хостинга
 ```
 
-| Variable      | Required | Description                                                              |
-|---------------|----------|--------------------------------------------------------------------------|
-| `BOT_TOKEN`   | Yes      | MAX messenger bot token. The bot refuses to start without it.            |
-| `ADMIN_ID`    | No       | Administrator chat ID (defaults to `0`).                                 |
-| `MDT_DOMAIN`  | No\*     | MoiDokumenti-Tourism account domain, e.g. `your-account.moidokumenti.ru`.|
-| `MDT_API_KEY` | No\*     | MoiDokumenti-Tourism API key.                                            |
-| `PORT`        | No       | Port for the Flask health server (defaults to `5000`).                   |
+---
 
-\* `MDT_DOMAIN` and `MDT_API_KEY` are optional: without them the bot runs
-normally but skips sending leads to the CRM.
+## Связанный репозиторий
 
-### 3. Run
+- [**turbot-arhangelsk**](https://github.com/r0meo-1/turbot-arhangelsk) — Telegram + VK, shared, 152-ФЗ, admin, Docker kit  
 
-```bash
-python bot.py
-```
+Смотрите оба, если хотите сравнить «одна идея — два адаптера».  
+В pin профиля достаточно **одного** тур-бота. HR не обязан коллекционировать мессенджеры.
 
-The bot starts long-polling the MAX API, and the Flask health server starts on
-`PORT` in a background thread.
+---
 
-## How It Works
+## Контакты
 
-1. **Start** — the user sends `/start`; the bot initializes the `TourForm` FSM
-   and asks for a destination.
-2. **Collect & validate** — the bot advances through states
-   (`destination → dates → people → budget → phone`), validating each input and
-   re-prompting on invalid answers.
-3. **Confirm** — once the phone number is valid, the bot summarizes the request
-   back to the user and clears the conversation state.
-4. **Deliver lead** — the request is sent to MoiDokumenti-Tourism via
-   `POST https://<MDT_DOMAIN>/api/add-lead` with the lead name, phone, source
-   (`MAX bot`), and structured fields (destination, dates, people, budget,
-   comment).
-5. **Fallback** — any message outside the form prompts the user to press
-   `/start`.
+**[r0meo1.ru](https://r0meo1.ru)** · [@r0meo1](https://t.me/r0meo1) · r0meo1@ya.ru
 
-A Flask server runs concurrently:
+## Лицензия
 
-- `GET /` → `MAX bot running`
-- `GET /health` → `{"status": "ok", "chats": <active chat count>}`
-
-## Deploy on Render
-
-1. Create a **Web Service** (not a Background Worker).
-2. Connect this GitHub repository.
-3. Build Command: `pip install -r requirements.txt`
-4. Start Command: `python bot.py`
-5. Add environment variables: `BOT_TOKEN`, and optionally `MDT_DOMAIN` /
-   `MDT_API_KEY`.
-
-Render injects `PORT` automatically; Flask binds to it for health checks.
-
-## Project Structure
-
-```
-turbot-arhangelsk-max/
-├── bot.py            # Bot logic, FSM, CRM integration, Flask health server
-├── requirements.txt  # Python dependencies
-├── .env.example      # Example environment variables
-├── LICENSE           # MIT license
-└── README.md         # This file
-```
-
-## License
-
-[MIT](LICENSE) © 2026 r0meo-1
+[MIT](LICENSE) — форкайте, деплойте, только не храните ПДн «где получилось».
